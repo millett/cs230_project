@@ -1,0 +1,170 @@
+---
+title: "Building the CS 230 Cohort from the MIMIC-III Data"
+author: "Scott Fleming"
+date: "February 25, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Note that the original dataset used in this analysis (namely "vitals_cohort_sirs.csv"" and "labs_cohort.csv" was provided in the course BIOMEDIN 215 (Data Driven Medicine) offered in Fall 2017, "Homework 3: Cohort Building". However, other than the original SQL queries used to pull the records from the MIMIC-III database and the comments/conceptual guidance on how to wrangle the extracted data shown in this notebook, the work here (the R code, specifically) is the work of Scott Fleming.
+
+#### Getting Ready
+
+We use the [MIMIC III database](https://mimic.physionet.org/mimictables/patients/) to create a dataset describing a cohort of patients admitted to the Intensive Care Unit of the Beth Israel Deaconess Medical Center in Boston, Massachusetts. We follow, in part, the cohort building process presented in ["A targeted real-time early warning score (TREWScore) for septic shock" by Henry et al.] (http://stm.sciencemag.org/content/7/299/299ra122.full) published in Science Translational Medicine in 2015.
+
+We first load all of the necessary packages.
+
+```{r part0, echo=FALSE}
+library(dplyr) 
+library(tidyr) 
+library(lubridate) 
+library(stringr) 
+library(readr) 
+library(ggplot2) 
+Sys.setenv(TZ='UTC')
+```
+
+#### Building a Cohort Based on Inclusion Criteria and Defining Endpoints
+In our study, we will consider the inclusion criteria used in the TREWScore paper. They included distinct patients who were age 15 years or greater at ICU admission with at least one assessment each of GCS, BUN, hematocrit, and heart rate recorded in the EHR.
+
+We read the vitals and labs data for our cohort stored in *vitals_cohort_sirs.csv* and *labs_cohort.csv* (provided by the BIOMEDIN 215 Teaching Staff) into R dataframes.
+
+```{r part1.3}
+setwd("/Users/scottyf/Documents/cs230/")
+vitals.dat <- read_csv("vitals_cohort_sirs.csv")
+labs.dat <- read_csv("labs_cohort.csv")
+head(vitals.dat)
+str(vitals.dat)
+head(labs.dat)
+str(labs.dat)
+```
+
+#### Incorporating the Systemic Inflammatory Response Syndrome (SIRS) into the Feature Set
+
+The Systemic Inflammatory Response Syndrome (SIRS) criteria has been an integral tool for the clinical definition of sepsis for the past several decades. In the TREWScore paper, the authors considered a patient to have sepsis if at least two of the four SIRS criteria were simultaneously met during an admission where a suspicion of infection was also present.
+
+The four SIRS criteria are as follows:
+1. Temperature > 38&deg;C or < 36&deg;C
+2. Heart Rate > 90
+3. Respiratory Rate > 20 or PaCO$_{2}$< 32mmHg
+4. WBC > 12,000/$mm^{3}$, < 4000/$mm^{3}$, or > 10% bands
+
+You can read more about SIRS (and some recent associated controversies surrounding its use) at https://www.ncbi.nlm.nih.gov/pubmed/1303622 and http://www.nejm.org/doi/full/10.1056/NEJMoa1415236#t=article.
+
+The next step in our process will be to assess whether patients satisfy each of the SIRS criteria at each time step that vitals or lab data is available. To this end, we would like to have a dataframe where each row corresponds to a unique combination of *subject_id*, *hadm_id*, *icustay_id*, and *charttime*, and with one column for each unique type of lab or vital that was measured at that time.
+
+On closer inspection, we see that rows 171 and 172 have the same vital_id (RespRate) recorded for the same charttime. Thus when spread is trying to assign a unique value for the RespRate at that time, it doesn't know how to deal with two conflicting values. One potential solution to this problem would be to just take the average of all values listed for a given combination of charttime, lab_id, icustay_id, hadm_id, and subject_id (this basically makes the assumption that the value of that vital is well-represented by the average of all values listed for that combination). That would mean that there is only one value for each unique combination of charttime, lab_id, icustay_id, hadm_id, and subject_id, which should handle the potential error:
+
+```{r part1.6a}
+vitals.dat <- vitals.dat %>% 
+  group_by(subject_id, hadm_id, icustay_id, charttime, vital_id) %>% 
+  summarise(avg_val = mean(valuenum)) %>% 
+  ungroup()
+
+labs.dat <- labs.dat %>%
+  group_by(subject_id, hadm_id, icustay_id, charttime, lab_id) %>%
+  summarise(avg_val = mean(valuenum)) %>%
+  ungroup()
+
+vitals.dat <- vitals.dat %>% spread(vital_id, avg_val)
+labs.dat <- labs.dat %>% spread(lab_id, avg_val)
+```
+
+#### Merging Lab Events and Vital Sign Recordings
+
+Since the measurement times for the vital signs may be different from those of the labs, the next step is to merge the vitals and labs dataframes together to get the full timeline for each patient. 
+
+With `full_join`, merge the spread labs and vitals dataframes you generated previously, using the common columns in the two dataframes.
+
+```{r part1.7}
+full.dat <- vitals.dat %>% full_join(labs.dat, by=c("subject_id", "hadm_id", "icustay_id", "charttime"))
+```
+
+#### Imputing Missing Values
+
+The resulting dataframe contains a lot of "missing" values recorded as `NA`. There are many potential approaches for handling missing values that we could take to address this issue. In this case, we are going to use a last-value-carried-forward approach within an ICU stay to fill in missing values.
+
+Potential Benefits of last-value-carried-forward approach: it's a very simple method, it works fairly well in most cases. Potential Drawbacks: What do we do for patients in which the first value of the variable is NA? (There's nothing to carry forward in that case). Also, for labs that are time sensitive in which you want to know something about syncrhony across variables (e.g. specific readings of both heart rate and hematocrit) the last-value-carried-forward may be misleading in suggesting that the patient's heart rate was constant over, say, a period of a half hour. 
+
+```{r part1.8}
+full.dat <- full.dat %>% 
+  arrange(subject_id, hadm_id, icustay_id, charttime) %>% 
+  group_by(subject_id, hadm_id, icustay_id) %>% 
+  fill(HeartRate:WBC) %>% 
+  ungroup()
+```
+
+Now we have a record of the most recent value for each lab or vital within an ICU stay for each patient in our development set. From this data, create a new dataframe called *SIRS* that has a record for each row in the timeline dataframe developed previously and a column indicating whether each of the SIRS criteria were satisfied at each chart time, and a final column indicating whether at least 2 of the SIRS criteria were satisfied. We assume that if a value is unknown that the patient does not meet that SIRS criterion.
+
+```{r part1.9}
+SIRS <- full.dat %>% 
+  mutate(SIRSCrit1 = (TempC > 38 | TempC < 36)) %>%
+  mutate(SIRSCrit2 = (HeartRate > 90)) %>%
+  mutate(SIRSCrit3 = (RespRate > 20 | PaCO2 < 32)) %>% 
+  mutate(SIRSCrit4 = (WBC < 4 | WBC > 12 | BANDS > 10))
+
+SIRS$NumSIRSCrit <- rowSums(SIRS %>% select(SIRSCrit1, SIRSCrit2, SIRSCrit3, SIRSCrit4), na.rm=TRUE)
+SIRS$MoreThan2 <- SIRS$NumSIRSCrit >= 2
+```
+
+For the patient with subject_id = 3, we plot the trajectories for each of the labs and vitals in their timeline. We plot the datetime on the x-axis and the recorded measurement on the y-axis and color the plotted points by whether or not the patient meets two or more of the SIRS criteria at that timepoint.
+
+```{r}
+subj3 <- SIRS %>% 
+  filter(subject_id == 3) %>% 
+  select(-c(subject_id, hadm_id, icustay_id, SIRSCrit1, SIRSCrit2, SIRSCrit3, SIRSCrit4, NumSIRSCrit)) %>% 
+  gather(key = Type, value = value, -c(charttime, MoreThan2))
+
+ggplot(subj3, aes(x=charttime, y=value)) + 
+  geom_point(aes(colour=MoreThan2)) + 
+  facet_wrap(~ Type, scales="free") + 
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+
+#### Averaging clinical variables across the ICU stay
+
+```{r}
+SIRS.summary <- SIRS %>% 
+  group_by(subject_id, hadm_id, icustay_id) %>%
+  summarise(meanHR = mean(HeartRate, na.rm=TRUE), 
+            meanRR = mean(RespRate, na.rm=TRUE),
+            meanSysBP = mean(SysBP, na.rm=TRUE),
+            meanTempC = mean(TempC, na.rm=TRUE),
+            meanAlbumin = mean(ALBUMIN, na.rm=TRUE),
+            meanBands = mean(BANDS, na.rm=TRUE),
+            meanBicarbonate = mean(BICARBONATE, na.rm=TRUE),
+            meanBilirubin = mean(BILIRUBIN, na.rm=TRUE),
+            meanBUN = mean(BUN, na.rm=TRUE),
+            meanChloride = mean(CHLORIDE, na.rm=TRUE),
+            meanCreatinine = mean(CREATININE, na.rm=TRUE),
+            meanGlucose = mean(GLUCOSE, na.rm=TRUE),
+            meanHematocrit = mean(HEMATOCRIT, na.rm=TRUE),
+            meanHemoglobin = mean(HEMOGLOBIN, na.rm=TRUE),
+            meanINR = mean(INR, na.rm=TRUE),
+            meanLactate = mean(LACTATE, na.rm=TRUE),
+            meanPaCO2 = mean(PaCO2, na.rm=TRUE),
+            meanPlatelet = mean(PLATELET, na.rm=TRUE),
+            meanPotassium = mean(POTASSIUM, na.rm=TRUE),
+            meanPT = mean(PT, na.rm=TRUE),
+            meanPTT = mean(PTT, na.rm=TRUE),
+            meanSodium = mean(SODIUM, na.rm=TRUE),
+            meanWBC = mean(WBC, na.rm=TRUE),
+            maxNumSIRSCrit = max(NumSIRSCrit, na.rm=TRUE)
+  ) %>%
+  ungroup()
+```
+
+Finally, for any values that are still missing from the dataset, we use KNN-imputation to fill them in so that we can run the VAE model on the data.
+
+```{r}
+library(caret)
+preProcValues <- preProcess(SIRS.summary %>% select(-subject_id, -hadm_id, -icustay_id), method=c("knnImpute"))
+SIRS.summary.imputed <- predict(preProcValues, SIRS.summary)
+
+write.csv(SIRS.summary.imputed, "SIRS_summary_imputed.csv")
+```
