@@ -126,12 +126,17 @@ def plot_labeled_data(X, Y=None, file_name=None):
     sub.set_ylabel('x2')
     for i, row in enumerate(X):
         if type(Y) is np.ndarray:
-            color = "blue" if Y[i] == 0 else "red"
+            if  Y[i] == 0:
+                color = "blue"
+            elif Y[i] == 1:
+                color = "red"
+            else:
+                color = "green"
         else:
             color = 'green'
         sub.plot(row[0], row[1], '+', color=color)
-
-    plt.savefig(file_name)
+    if file_name:
+        plt.savefig(file_name)
     plt.show()
     print('scatter plot drawn')
 
@@ -233,3 +238,24 @@ def get_var(name):
         if all_vars[i].name.startswith(name):
             return all_vars[i]
     return None
+
+def initialize_history():
+    """
+    Initializes a dictionary of history items.
+    Items:
+    Number of iterations/epochs, used as index when plotting
+    Entropy
+    Validation Entropy
+    Loss
+    Validation Loss
+    Accuracy
+    Validation Accuracy
+    """
+    history = {}
+    history['iters'] = []
+    history['nent'] = []
+    history['val_nent'] = []
+    history['loss'] = []
+    history['val_loss'] = []
+    history['acc'] = []
+    history['val_acc'] = []

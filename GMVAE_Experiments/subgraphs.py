@@ -60,21 +60,16 @@ def pz_graph(y, n_z):
                                                reuse=reuse)
     return y, zm, zv
 
-def px_fixed_graph(z):
+def px_fixed_graph(z, n_x):
     reuse = len(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='px_fixed')) > 0
     # -- p(x)
     with tf.variable_scope('px_fixed'):
         h = tf.contrib.layers.fully_connected(z, 2, scope='layer1',
                                     activation_fn=tf.nn.relu,
-                                    reuse=reuse,
-                                    weights_initializer=tf.constant_initializer(
-                                            [[1,-2],[1,-2]], verify_shape=True))
-        px_logit = tf.contrib.layers.fully_connected(h, 2, scope='output',
+                                    reuse=reuse)
+        px_logit = tf.contrib.layers.fully_connected(h, n_x, scope='output',
                                                      activation_fn=None,
-                                                     reuse=reuse,
-                                                     weights_initializer=tf.constant_initializer(
-                                                         [[1,-4],[-3,2]],
-                                                         verify_shape=True))
+                                                     reuse=reuse)
         #px_logit = tf.identity(px_logit,name='x')
     return px_logit
 

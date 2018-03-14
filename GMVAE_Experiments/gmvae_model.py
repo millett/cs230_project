@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from tensorbayes.layers import constant, placeholder
 from subgraphs import qy_graph, qz_graph, px_graph, pz_graph, labeled_loss
-from utils import open_file, progbar, stream_print, test_acc, save_params, get_var
+from utils import open_file, progbar, stream_print, test_acc, save_params, initialize_history
 from tensorbayes.nbutils import show_default_graph
 
 class GMVAE():
@@ -57,7 +57,8 @@ class GMVAE():
 
         show_default_graph()
 
-    def train(self, fname, dataset, sess_info, epochs):
+    def train(self, fname, dataset, sess_info, epochs, save_parameters = True):
+        history = initialize_history()
         (sess, saver) = sess_info
         f = open_file(fname)
         iterep = 500
@@ -82,8 +83,19 @@ class GMVAE():
                 string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10d}'
                           .format(a, b, c, d, e, int((i + 1) / iterep)))
                 stream_print(f, string)
+
+                history['iters'].append(int((i + 1) / iterep))
+                history['ent'].append(a)
+                history['val_ent'].append(c)
+                history['loss'].append(b)
+                history['val_loss'].append(d)
+                history['val_acc'].append(e)
+
+
             # Saves parameters every 10 epochs
-            if (i + 1) % (10 * iterep) == 0:
+            if (i + 1) % (10 * iterep) == 0 and save_parameters:
                 print('saving')
                 save_params(saver, sess, (i + 1) // iterep)
         if f is not None: f.close()
+
+        return history
