@@ -253,9 +253,11 @@ def initialize_history():
     """
     history = {}
     history['iters'] = []
-    history['nent'] = []
-    history['val_nent'] = []
+    history['ent'] = []
+    history['val_ent'] = []
     history['loss'] = []
     history['val_loss'] = []
     history['acc'] = []
     history['val_acc'] = []
+
+    return history
