@@ -7,6 +7,7 @@ import os.path
 import datetime
 import matplotlib.pyplot as plt
 from dataset import Dataset
+import sklearn
 
 ### PLOTTING HELPER FUNCTIONS ###
 
@@ -27,7 +28,7 @@ def plot_z_means(sess, X, Y, model, k, n_z):
     labels = np.argmax(Y, axis=1)
     plot_labeled_data(zm, labels, 'scatter_predicted_zm.png')
 
-def plot_z(sess, X, Y, model, k, n_z):
+def plot_z(sess, X, Y, model, k, n_z, tsne=False):
     '''
         Given examples data, computes and plots their latent variables
     '''
@@ -40,8 +41,11 @@ def plot_z(sess, X, Y, model, k, n_z):
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     z = all_z[y_pred]
-    labels = np.argmax(Y, axis=1)
-    plot_labeled_data(z, labels, 'scatter_predicted_z.png')
+    labels = np.array(Y)#np.argmax(Y, axis=1)
+    if tsne:
+        plot_labeled_data(z, labels, 'scatter_predicted_z_tsne.png', tsne)
+    else:
+        plot_labeled_data(z, labels, 'scatter_predicted_z.png', tsne)
 
 def plot_gmvae_output(sess, X, Y, model, k):
     '''
@@ -58,7 +62,7 @@ def plot_gmvae_output(sess, X, Y, model, k):
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     x = all_x[y_pred]
-    labels = np.argmax(Y, axis=1)
+    labels = np.array(Y)#, axis=1)
     plot_labeled_data(x, labels, 'scatter_predicted_x.png')
 
 def sample_z(sess, model, y, num_samples=6):
@@ -118,13 +122,19 @@ def plot_data_clusters(clusters, file_name):
     plt.show()
     print('scatter plot drawn')
 
-def plot_labeled_data(X, Y=None, file_name=None):
+def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
     fig = plt.figure()
     sub = fig.add_subplot(111)
     sub.set_title(file_name)
     sub.set_xlabel('x1')
     sub.set_ylabel('x2')
-    for i, row in enumerate(X):
+    cnt = 0
+    if tsne:
+        true_X = sklearn.manifold.tsne(n_components=2, perplexity=10).fit_transform(X)
+    else:
+        true_X = X
+    for i, row in enumerate(true_X):
+        cnt += 1
         if type(Y) is np.ndarray:
             if  Y[i] == 0:
                 color = "blue"
@@ -138,6 +148,7 @@ def plot_labeled_data(X, Y=None, file_name=None):
     if file_name:
         plt.savefig(file_name)
     plt.show()
+    print('i is',i)
     print('scatter plot drawn')
 
 def plot_r_by_c_images(images, r=10, c=10):
