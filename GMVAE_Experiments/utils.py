@@ -7,8 +7,17 @@ import os.path
 import datetime
 import matplotlib.pyplot as plt
 from dataset import Dataset
+import sklearn
 
 ### PLOTTING HELPER FUNCTIONS ###
+
+def sample_random_subset(X, Y, size):
+    Y_cols = Y.columns.values
+    total_data = pd.concat([X,Y],axis=1)
+    sample = total_data.sample(n=size)
+    X_sample = sample[X.columns.values]
+    Y_sample = sample[Y.columns.values]
+    return (X_sample, Y_sample)
 
 def plot_z_means(sess, X, Y, model, k, n_z):
     '''
@@ -27,7 +36,7 @@ def plot_z_means(sess, X, Y, model, k, n_z):
     labels = np.argmax(Y, axis=1)
     plot_labeled_data(zm, labels, 'scatter_predicted_zm.png')
 
-def plot_z(sess, X, Y, model, k, n_z):
+def plot_z(sess, X, Y, model, k, n_z, tsne=False):
     '''
         Given examples data, computes and plots their latent variables
     '''
@@ -40,10 +49,13 @@ def plot_z(sess, X, Y, model, k, n_z):
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     z = all_z[y_pred]
-    labels = np.argmax(Y, axis=1)
-    plot_labeled_data(z, labels, 'scatter_predicted_z.png')
+    labels = np.array(Y)#np.argmax(Y, axis=1)
+    if tsne:
+        plot_labeled_data(z, labels, 'scatter_predicted_z_tsne.png', tsne)
+    else:
+        plot_labeled_data(z, labels, 'scatter_predicted_z.png', tsne)
 
-def plot_gmvae_output(sess, X, Y, model, k):
+def plot_gmvae_output(sess, X, Y, model, k, tsne=False):
     '''
         Given examples data, computes and plots the output of the examples
     '''
@@ -58,8 +70,8 @@ def plot_gmvae_output(sess, X, Y, model, k):
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     x = all_x[y_pred]
-    labels = np.argmax(Y, axis=1)
-    plot_labeled_data(x, labels, 'scatter_predicted_x.png')
+    labels = np.array(Y)#, axis=1)
+    plot_labeled_data(x, labels, 'scatter_predicted_x.png', tsne)
 
 def sample_z(sess, model, y, num_samples=6):
     '''
@@ -82,6 +94,32 @@ def sample_x(sess, model, y=None, num_samples=6):
                  feed_dict={
                      'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
     return x
+
+
+def generate(y, z, sess, model):
+    '''
+        Given a gaussian category, sample latent variables from that gaussian
+        distribution, and compute their variable representations
+    '''
+    x = sess.run(model.px_logit[y],
+                 feed_dict={
+                     'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
+    return x
+
+def encode(X, sess, model):
+    '''
+        Given a gaussian category, sample latent variables from that gaussian
+        distribution, and compute their variable representations
+    '''
+    all_z = np.zeros((len(X), model.k, model.n_z))
+    for i in range(model.k):
+        all_z[:, i] = sess.run(model.z[i],
+                                feed_dict={'x:0': X})
+
+    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    y_pred = one_hot(qy.argmax(axis=1), depth=model.k).astype(bool)
+    z = all_z[y_pred]
+    return z
 
 def sample_and_plot_z(sess, k, model, num_samples):
     """
@@ -118,13 +156,19 @@ def plot_data_clusters(clusters, file_name):
     plt.show()
     print('scatter plot drawn')
 
-def plot_labeled_data(X, Y=None, file_name=None):
+def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
     fig = plt.figure()
     sub = fig.add_subplot(111)
     sub.set_title(file_name)
     sub.set_xlabel('x1')
     sub.set_ylabel('x2')
-    for i, row in enumerate(X):
+    cnt = 0
+    if tsne:
+        true_X = sklearn.manifold.TSNE(n_components=2, perplexity=10).fit_transform(X)
+    else:
+        true_X = X
+    for i, row in enumerate(true_X):
+        cnt += 1
         if type(Y) is np.ndarray:
             if  Y[i] == 0:
                 color = "blue"
@@ -138,6 +182,7 @@ def plot_labeled_data(X, Y=None, file_name=None):
     if file_name:
         plt.savefig(file_name)
     plt.show()
+    print('i is',i)
     print('scatter plot drawn')
 
 def plot_r_by_c_images(images, r=10, c=10):

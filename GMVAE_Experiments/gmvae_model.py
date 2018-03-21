@@ -64,6 +64,8 @@ class GMVAE():
         iterep = 500
         for i in range(iterep * epochs):
             batch = dataset.train.next_batch(100)
+            #print("batch is")
+            #print(batch)
             sess.run(self.train_step,
                      feed_dict={'x:0': batch})
 
@@ -72,16 +74,20 @@ class GMVAE():
                 a, b = sess.run([self.nent, self.loss], feed_dict={
                     'x:0': dataset.train.data[np.random.choice(len(dataset.train.data),
                                                                200)]})
+                
+                a, b = -a.mean(), b.mean()
                 c, d = sess.run([self.nent, self.loss],
                                 feed_dict={'x:0': dataset.test.data})
                 a, b, c, d = -a.mean(), b.mean(), -c.mean(), d.mean()
-                e = test_acc(dataset, sess, self.qy_logit)
+                #e = test_acc(dataset, sess, self.qy_logit)
                 string = ('{:>10s},{:>10s},{:>10s},{:>10s},{:>10s},{:>10s}'
                           .format('tr_ent', 'tr_loss', 't_ent', 't_loss',
                                   't_acc', 'epoch'))
                 stream_print(f, string, i <= iterep)
-                string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10d}'
-                          .format(a, b, c, d, e, int((i + 1) / iterep)))
+                #string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10d}'
+                #         .format(a, b, c, d, e, int((i + 1) / iterep)))
+                string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e}'
+                         .format(a, b, c, d, int((i + 1) / iterep)))
                 stream_print(f, string)
 
                 history['iters'].append(int((i + 1) / iterep))
@@ -89,7 +95,7 @@ class GMVAE():
                 history['val_ent'].append(c)
                 history['loss'].append(b)
                 history['val_loss'].append(d)
-                history['val_acc'].append(e)
+               # history['val_acc'].append(e)
 
 
             # Saves parameters every 10 epochs
