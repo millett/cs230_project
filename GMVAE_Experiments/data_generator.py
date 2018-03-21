@@ -42,9 +42,9 @@ with tf.Session() as sess:
     y_1 = np.full((len(z1)), 1)
     y_2 = np.full((len(z2)), 2)
 
-    z = np.concatenate((z0, z1, z2))
-    x = np.concatenate(((x_0, x_1, x_2)))
-    y = np.concatenate((y_0, y_1, y_2))
+    z = np.concatenate((z0, z1))
+    x = np.concatenate(((x_0, x_1)))
+    y = np.concatenate((y_0, y_1))
     print('Plotting generated latent variables')
     plot_labeled_data(z, y, 'scatter_true_z.png')
     #print('Plotting generated variables')
