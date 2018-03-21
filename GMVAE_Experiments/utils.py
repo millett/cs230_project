@@ -11,6 +11,14 @@ import sklearn
 
 ### PLOTTING HELPER FUNCTIONS ###
 
+def sample_random_subset(X, Y, size):
+    Y_cols = Y.columns.values
+    total_data = pd.concat([X,Y],axis=1)
+    sample = total_data.sample(n=size)
+    X_sample = sample[X.columns.values]
+    Y_sample = sample[Y.columns.values]
+    return (X_sample, Y_sample)
+
 def plot_z_means(sess, X, Y, model, k, n_z):
     '''
         Given examples data, computes and plots the mean of the examples latent
@@ -47,7 +55,7 @@ def plot_z(sess, X, Y, model, k, n_z, tsne=False):
     else:
         plot_labeled_data(z, labels, 'scatter_predicted_z.png', tsne)
 
-def plot_gmvae_output(sess, X, Y, model, k):
+def plot_gmvae_output(sess, X, Y, model, k, tsne=False):
     '''
         Given examples data, computes and plots the output of the examples
     '''
@@ -63,7 +71,7 @@ def plot_gmvae_output(sess, X, Y, model, k):
 
     x = all_x[y_pred]
     labels = np.array(Y)#, axis=1)
-    plot_labeled_data(x, labels, 'scatter_predicted_x.png')
+    plot_labeled_data(x, labels, 'scatter_predicted_x.png', tsne)
 
 def sample_z(sess, model, y, num_samples=6):
     '''
@@ -86,6 +94,32 @@ def sample_x(sess, model, y=None, num_samples=6):
                  feed_dict={
                      'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
     return x
+
+
+def generate(y, z, sess, model):
+    '''
+        Given a gaussian category, sample latent variables from that gaussian
+        distribution, and compute their variable representations
+    '''
+    x = sess.run(model.px_logit[y],
+                 feed_dict={
+                     'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
+    return x
+
+def encode(X, sess, model):
+    '''
+        Given a gaussian category, sample latent variables from that gaussian
+        distribution, and compute their variable representations
+    '''
+    all_z = np.zeros((len(X), model.k, model.n_z))
+    for i in range(model.k):
+        all_z[:, i] = sess.run(model.z[i],
+                                feed_dict={'x:0': X})
+
+    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    y_pred = one_hot(qy.argmax(axis=1), depth=model.k).astype(bool)
+    z = all_z[y_pred]
+    return z
 
 def sample_and_plot_z(sess, k, model, num_samples):
     """
@@ -130,7 +164,7 @@ def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
     sub.set_ylabel('x2')
     cnt = 0
     if tsne:
-        true_X = sklearn.manifold.tsne(n_components=2, perplexity=10).fit_transform(X)
+        true_X = sklearn.manifold.TSNE(n_components=2, perplexity=10).fit_transform(X)
     else:
         true_X = X
     for i, row in enumerate(true_X):
