@@ -8,6 +8,7 @@ import datetime
 import matplotlib.pyplot as plt
 from dataset import Dataset
 import sklearn
+import pandas as pd
 
 ### PLOTTING HELPER FUNCTIONS ###
 
@@ -157,7 +158,7 @@ def plot_data_clusters(clusters, file_name):
     plt.show()
     print('scatter plot drawn')
 
-def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
+def plot_labeled_data(X, Y=None, file_name=None, tsne=False, perplexity=30):
     fig = plt.figure()
     sub = fig.add_subplot(111)
     sub.set_title(file_name)
@@ -165,7 +166,7 @@ def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
     sub.set_ylabel('x2')
     cnt = 0
     if tsne:
-        true_X = sklearn.manifold.TSNE(n_components=2, perplexity=10).fit_transform(X)
+        true_X = sklearn.manifold.TSNE(n_components=2, perplexity=perplexity).fit_transform(X)
     else:
         true_X = X
     for i, row in enumerate(true_X):
@@ -175,6 +176,10 @@ def plot_labeled_data(X, Y=None, file_name=None, tsne=False):
                 color = "blue"
             elif Y[i] == 1:
                 color = "red"
+            elif Y[i] > 2:
+                color = "magenta"
+           # elif Y[i] == 3:
+           #     color = "orange"
             else:
                 color = "green"
         else:
