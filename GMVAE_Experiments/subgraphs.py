@@ -40,7 +40,7 @@ def qz_graph(x, y, n_z, phase):
     reuse = len(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='qz')) > 0
     # -- q(z)
     with tf.variable_scope('qz'):
-        h0 = tf.contrib.layers.fully_connected(y, y.get_shape()[-1], scope='layer0',
+        h0 = tf.contrib.layers.fully_connected(y, int(y.get_shape()[-1]), scope='layer0',
                                                activation_fn=None,
                                                reuse=reuse)
         xy = tf.concat((x, h0), 1, name='xy/concat')
