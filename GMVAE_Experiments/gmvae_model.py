@@ -12,13 +12,14 @@ class GMVAE():
         self.n_z = n_z
         tf.reset_default_graph()
         x = placeholder((None, n_x), name='x')
+        phase = tf.placeholder(tf.bool, name='phase')
 
         # create a y "placeholder"
         with tf.name_scope('y_'):
             y_ = tf.fill(tf.stack([tf.shape(x)[0], k]), 0.0)
 
         # propose distribution over y
-        self.qy_logit, self.qy = qy_graph(x, k)
+        self.qy_logit, self.qy = qy_graph(x, k, phase)
 
         # for each proposed y, infer z and reconstruct x
         self.z, \
@@ -26,17 +27,18 @@ class GMVAE():
         self.zv, \
         self.zm_prior, \
         self.zv_prior, \
-        self.px_logit,\
-        self.y = [[None] * k for i in range(7)]
+        self.xm, \
+        self.xv, \
+        self.y = [[None] * k for i in range(8)]
         for i in range(k):
             with tf.name_scope('graphs/hot_at{:d}'.format(i)):
                 y = tf.add(y_,
                            constant(np.eye(k)[i], name='hot_at_{:d}'.format(i)))
-                self.z[i], self.zm[i], self.zv[i] = qz_graph(x, y, n_z)
+                self.z[i], self.zm[i], self.zv[i] = qz_graph(x, y, n_z, phase)
                 self.y[i], \
                 self.zm_prior[i], \
-                self.zv_prior[i] = pz_graph(y, n_z)
-                self.px_logit[i] = px_graph(self.z[i], n_x)
+                self.zv_prior[i] = pz_graph(y, n_z, phase)
+                self.xm[i], self.xv[i] = px_graph(self.z[i], n_x, phase)
 
         # Aggressive name scoping for pretty graph visualization :P
         with tf.name_scope('loss'):
@@ -47,55 +49,54 @@ class GMVAE():
             losses = [None] * k
             for i in range(k):
                 with tf.name_scope('loss_at{:d}'.format(i)):
-                    losses[i] = labeled_loss(x, self.px_logit[i], self.z[i], self.zm[i],
-                                             self.zv[i], self.zm_prior[i], self.zv_prior[i])
+                    losses[i] = labeled_loss(x, self.xm[i], self.xv[i],
+                                             self.z[i], self.zm[i], self.zv[i],
+                                             self.zm_prior[i], self.zv_prior[i])
             with tf.name_scope('final_loss'):
                 self.loss = tf.add_n(
-                    [self.nent] + [self.qy[:, i] * losses[i] for i in range(k)])
+                    #[self.nent] +
+                    [self.qy[:, i] * losses[i] for i in range(k)])
 
-        self.train_step = tf.train.AdamOptimizer().minimize(self.loss)
+        self.train_step = tf.train.AdamOptimizer(0.00001).minimize(self.loss)
 
         show_default_graph()
 
-    def train(self, fname, dataset, sess_info, epochs, save_parameters = True):
+    def train(self, fname, dataset, sess_info, epochs, save_parameters = True, is_labeled = False):
         history = initialize_history()
         (sess, saver) = sess_info
         f = open_file(fname)
         iterep = 500
         for i in range(iterep * epochs):
             batch = dataset.train.next_batch(100)
-            #print("batch is")
-            #print(batch)
             sess.run(self.train_step,
-                     feed_dict={'x:0': batch})
-
+                     feed_dict={'x:0': batch, 'phase:0': True})
             progbar(i, iterep)
             if (i + 1) % iterep == 0:
                 a, b = sess.run([self.nent, self.loss], feed_dict={
                     'x:0': dataset.train.data[np.random.choice(len(dataset.train.data),
-                                                               200)]})
-                
-                a, b = -a.mean(), b.mean()
+                                                               200)], 'phase:0': False})
                 c, d = sess.run([self.nent, self.loss],
-                                feed_dict={'x:0': dataset.test.data})
+                                feed_dict={'x:0': dataset.test.data, 'phase:0': False})
                 a, b, c, d = -a.mean(), b.mean(), -c.mean(), d.mean()
-                #e = test_acc(dataset, sess, self.qy_logit)
+                e = (0, test_acc(dataset, sess, self.qy_logit))[is_labeled]
                 string = ('{:>10s},{:>10s},{:>10s},{:>10s},{:>10s},{:>10s}'
                           .format('tr_ent', 'tr_loss', 't_ent', 't_loss',
                                   't_acc', 'epoch'))
                 stream_print(f, string, i <= iterep)
-                #string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10d}'
-                #         .format(a, b, c, d, e, int((i + 1) / iterep)))
-                string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e}'
-                         .format(a, b, c, d, int((i + 1) / iterep)))
+                string = ('{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10.2e},{:10d}'
+                         .format(a, b, c, d, e, int((i + 1) / iterep)))
                 stream_print(f, string)
+                qy = sess.run(self.qy,
+                                feed_dict={'x:0': dataset.test.data, 'phase:0': False})
+                print('Sample of qy')
+                print(qy[:5])
 
                 history['iters'].append(int((i + 1) / iterep))
                 history['ent'].append(a)
                 history['val_ent'].append(c)
                 history['loss'].append(b)
                 history['val_loss'].append(d)
-               # history['val_acc'].append(e)
+                history['val_acc'].append(e)
 
 
             # Saves parameters every 10 epochs

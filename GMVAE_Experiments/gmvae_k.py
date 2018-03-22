@@ -13,45 +13,58 @@ def main():
         k = 2
         print('Setting default value k={0}'.format(k))
 
-    n_x = 10
+    n_x = 2
     n_z = 2
 
     dataset = load_and_mix_data('generated_from_cluster',k,True)
+    if True:
+        x = dataset.test.data
+        y = dataset.test.labels
+        print('Plotting dataset variables')
+        plot_labeled_data(x, np.argmax(y, axis=1), 'scatter_x.png')
 
     model = GMVAE(k=k, n_x=n_x, n_z=n_z)
 
-    saver = tf.train.Saver(keep_checkpoint_every_n_hours=4)
+    saver = tf.train.Saver(keep_checkpoint_every_n_hours=4, max_to_keep=20)
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
-        # Restore parameters from file (optional)
-        #saver.restore(sess, './savedModels/2018-2-22/model-30')
+        use_pretrained = False
+        if use_pretrained:
+            # Restore parameters from file (optional)
+            saver.restore(sess, './savedModels/2018-3-22/model-100')
+        else:
+            # TRAINING
+            sess_info = (sess, saver)
+            history = model.train('logs/gmvae_k={:d}.log'.format(k), dataset, sess_info, epochs=100, is_labeled = True)
 
-        # TRAINING
-        sess_info = (sess, saver)
-        model.train('logs/gmvae_k={:d}.log'.format(k), dataset, sess_info, epochs=10)
+            plot_lines(history['iters'], [history['loss'], history['val_loss']], 'Loss')
+            plot_lines(history['iters'], [history['val_acc']], 'Accuracy')
 
         # SCATTER PLOT
-        plot_z(sess,
+        y_pred = plot_z(sess,
                dataset.test.data,
-               dataset.test.labels,
+               np.argmax(dataset.test.labels, axis=1),
                model,
                k,
                n_z)
+        #print(y_pred)
         plot_z_means(sess,
-                     dataset.test.data,
-                     dataset.test.labels,
-                     model,
-                     k,
-                     n_z)
-        plot_gmvae_output(sess,
-                          dataset.test.data,
-                          dataset.test.labels,
-                          model,
-                          k)
+               dataset.test.data,
+               np.argmax(dataset.test.labels, axis=1),
+               model,
+               k,
+               n_z)
 
-        sample_and_plot_z(sess, k, model, 300)
-        sample_and_plot_x(sess, k, model, 300)
+        if use_pretrained:
+            plot_gmvae_output(sess,
+                              dataset.test.data,
+                              np.argmax(dataset.test.labels, axis=1),
+                              model,
+                              k)
+
+            sample_and_plot_z(sess, k, model, 300)
+            sample_and_plot_x(sess, k, model, 300)
 
 
 

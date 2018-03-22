@@ -27,13 +27,13 @@ def plot_z_means(sess, X, Y, model, k, n_z):
     all_zm = np.zeros((len(X), k, n_z))
     for i in range(k):
         all_zm[:, i] = sess.run(model.zm[i],
-                                feed_dict={'x:0': X})
+                                feed_dict={'x:0': X, 'phase:0': False})
 
-    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    qy = sess.run(model.qy, feed_dict={'x:0': X, 'phase:0': False})
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     zm = all_zm[y_pred]
-    labels = np.argmax(Y, axis=1)
+    labels = np.array(Y)
     plot_labeled_data(zm, labels, 'scatter_predicted_zm.png')
 
 def plot_z(sess, X, Y, model, k, n_z, tsne=False):
@@ -43,17 +43,18 @@ def plot_z(sess, X, Y, model, k, n_z, tsne=False):
     all_z = np.zeros((len(X), k, n_z))
     for i in range(k):
         all_z[:, i] = sess.run(model.z[i],
-                                feed_dict={'x:0': X})
+                                feed_dict={'x:0': X, 'phase:0': False})
 
-    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    qy = sess.run(model.qy, feed_dict={'x:0': X, 'phase:0': False})
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     z = all_z[y_pred]
-    labels = np.array(Y)#np.argmax(Y, axis=1)
+    labels = np.array(Y)
     if tsne:
         plot_labeled_data(z, labels, 'scatter_predicted_z_tsne.png', tsne)
     else:
         plot_labeled_data(z, labels, 'scatter_predicted_z.png', tsne)
+    return qy.argmax(axis=1)
 
 def plot_gmvae_output(sess, X, Y, model, k, tsne=False):
     '''
@@ -63,10 +64,10 @@ def plot_gmvae_output(sess, X, Y, model, k, tsne=False):
     all_x = np.zeros((len(X), k, x_dims))
 
     for i in range(k):
-        all_x[:, i] = sess.run(model.px_logit[i],
-                               feed_dict={'x:0': X})
+        all_x[:, i] = sess.run(model.xm[i],
+                               feed_dict={'x:0': X, 'phase:0': False})
 
-    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    qy = sess.run(model.qy, feed_dict={'x:0': X, 'phase:0': False})
     y_pred = one_hot(qy.argmax(axis=1), depth=k).astype(bool)
 
     x = all_x[y_pred]
@@ -80,7 +81,8 @@ def sample_z(sess, model, y, num_samples=6):
     '''
     # Need to feed x to get proper shape of input
     zm, zv = sess.run([model.zm_prior[y], model.zv_prior[y]],
-                      feed_dict={'x:0': np.zeros((num_samples, model.n_x))})
+                      feed_dict={'x:0': np.zeros((num_samples, model.n_x))
+                          , 'phase:0': False})
     z_sample = np.random.normal(loc=zm, scale=np.sqrt(zv))
     return z_sample
 
@@ -90,20 +92,19 @@ def sample_x(sess, model, y=None, num_samples=6):
         distribution, and compute their variable representations
     '''
     z = sample_z(sess, model, y, num_samples=num_samples)
-    x = sess.run(model.px_logit[y],
+    x = sess.run(model.xm[y],
                  feed_dict={
-                     'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
+                     'graphs/hot_at{:d}/qz/z/z_sample:0'.format(y): z, 'phase:0': False})
     return x
-
 
 def generate(y, z, sess, model):
     '''
         Given a gaussian category, sample latent variables from that gaussian
         distribution, and compute their variable representations
     '''
-    x = sess.run(model.px_logit[y],
+    x = sess.run(model.xm[y],
                  feed_dict={
-                     'graphs/hot_at{:d}/qz/z_sample:0'.format(y): z})
+                     'graphs/hot_at{:d}/qz/z/z_sample:0'.format(y): z, 'phase:0': False})
     return x
 
 def encode(X, sess, model):
@@ -114,9 +115,9 @@ def encode(X, sess, model):
     all_z = np.zeros((len(X), model.k, model.n_z))
     for i in range(model.k):
         all_z[:, i] = sess.run(model.z[i],
-                                feed_dict={'x:0': X})
+                                feed_dict={'x:0': X, 'phase:0': False})
 
-    qy = sess.run(model.qy, feed_dict={'x:0': X})
+    qy = sess.run(model.qy, feed_dict={'x:0': X, 'phase:0': False})
     y_pred = one_hot(qy.argmax(axis=1), depth=model.k).astype(bool)
     z = all_z[y_pred]
     return z
@@ -203,6 +204,12 @@ def plot_r_by_c_images(images, r=10, c=10):
     plt.savefig('mnist', bbox_inches='tight')
     plt.show()
 
+def plot_lines(iters, lines, title):
+    plt.title(title)
+    for line in lines:
+        plt.plot(iters, line)
+    plt.show()
+
 ########################################
 
 def one_hot(labels, depth):
@@ -256,7 +263,7 @@ def test_acc(dataset, sess, qy_logit):
     # Basically, for each category, look at the most common digit among the test
     # examples in that category, and predict all those test examples as that
     # most common digit
-    logits = sess.run(qy_logit, feed_dict={'x:0': dataset.test.data})
+    logits = sess.run(qy_logit, feed_dict={'x:0': dataset.test.data, 'phase:0': False})
     cat_pred = logits.argmax(1)
     real_pred = np.zeros_like(cat_pred)
     real_labels = dataset.test.labels.argmax(1)
